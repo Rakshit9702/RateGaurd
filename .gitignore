@@ -1,0 +1,27 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Env
+.env
+
+# Benchmark output (raw data regenerates per run; the plots are committed
+# as the captured evidence the README embeds -- see benchmark/results/plots/)
+benchmark/results/*.csv
+benchmark/results/results.json
+
+# Test artifacts (README pulls numbers from these, but they're regenerated per-run)
+tests/artifacts/*.json
+
+# pytest
+.pytest_cache/
+
+# Claude Code local settings
+.claude/

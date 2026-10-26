@@ -1,0 +1,41 @@
+[project]
+name = "rate-limiter"
+version = "0.1.0"
+description = "Standalone Redis-backed rate-limiting service with four algorithms and a benchmark harness"
+authors = [
+    { name = "Rudrash42", email = "nborkar2005@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "redis>=5.2",
+    "asyncpg>=0.29",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "grpcio>=1.66",
+    "protobuf>=5.28",
+    "httpx>=0.27",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "grpcio-tools>=1.66",
+    "starlette>=0.38",
+    "uvicorn[standard]>=0.32",
+]
+benchmark = [
+    "matplotlib>=3.9",
+    "pandas>=2.2",
+    "numpy>=2.1",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]

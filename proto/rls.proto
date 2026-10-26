@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package envoy.service.ratelimit.v3;
+
+import "google/protobuf/duration.proto";
+
+// Wire-compatible subset of Envoy's real rate limit service protocol
+// (envoyproxy/envoy: api/envoy/service/ratelimit/v3/rls.proto +
+// api/envoy/extensions/common/ratelimit/v3/ratelimit.proto). Same package,
+// service name, RPC name, message names, and field numbers as the official
+// definitions for every field implemented here -- a real Envoy proxy
+// configured with this as its rate_limit_service target can talk to it,
+// since protobuf wire compatibility only depends on field numbers/types.
+//
+// What's deliberately not vendored: the official file also imports
+// protoc-gen-validate (validate.proto) and udpa versioning annotations --
+// internal Envoy tooling metadata, not required for the wire protocol to
+// work. Pulling those in means vendoring ~10 transitive .proto files from
+// Envoy's API repo for no behavioral benefit here.
+//
+// Also not implemented (present in the real proto, out of scope for this
+// project): RateLimitOverride, is_negative_hits, Quota/quota,
+// response_headers_to_add, request_headers_to_add, raw_body,
+// dynamic_metadata, DescriptorStatus.current_limit. hits_addend is accepted
+// for protocol completeness but not yet wired to variable-cost consumption
+// -- every algorithm here still consumes exactly 1 unit per check.
+
+service RateLimitService {
+  rpc ShouldRateLimit(RateLimitRequest) returns (RateLimitResponse) {}
+}
+
+message RateLimitDescriptor {
+  message Entry {
+    string key = 1;
+    string value = 2;
+  }
+
+  repeated Entry entries = 1;
+}
+
+message RateLimitRequest {
+  // Resolved directly against RateGuard's existing named policy registry --
+  // the same resolution POST /check does with {"policy": "..."}.
+  string domain = 1;
+  repeated RateLimitDescriptor descriptors = 2;
+  uint32 hits_addend = 3;
+}
+
+message RateLimitResponse {
+  enum Code {
+    UNKNOWN = 0;
+    OK = 1;
+    OVER_LIMIT = 2;
+  }
+
+  message DescriptorStatus {
+    Code code = 1;
+    uint32 limit_remaining = 3;
+    google.protobuf.Duration duration_until_reset = 4;
+  }
+
+  // OVER_LIMIT if any descriptor is over limit, matching Envoy's real
+  // semantics for a multi-descriptor request.
+  Code overall_code = 1;
+  repeated DescriptorStatus statuses = 2;
+}

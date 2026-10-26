@@ -1,0 +1,56 @@
+# Same demo caveat as redis.yaml: single replica, no PVC, no durability of
+# its own. A real deployment would use a managed Postgres (RDS/Cloud SQL) or
+# a StatefulSet + PVC. The docker-compose `db/init.sql` test-database bootstrap
+# has no equivalent here -- a K8s deployment doesn't need a test database.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          env:
+            - name: POSTGRES_USER
+              value: rateguard
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: rateguard-secrets
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              value: rateguard
+          ports:
+            - containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "rateguard"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "rateguard"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

@@ -1,0 +1,149 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save ""
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  # Durable policy config -- deliberately separate from the ephemeral Redis
+  # counters. See app/db.py and the README's "polyglot persistence" note.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: rateguard
+      POSTGRES_PASSWORD: rateguard
+      POSTGRES_DB: rateguard
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rateguard"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  # Three separate named instances (not `deploy: replicas: 3`) on distinct
+  # host ports -- simplest way to prove the limit holds globally across
+  # processes sharing one Redis, no load balancer required.
+  app1:
+    build: .
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://rateguard:rateguard@postgres:5432/rateguard
+    ports:
+      - "8001:8000"
+      - "50051:50051"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  app2:
+    build: .
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://rateguard:rateguard@postgres:5432/rateguard
+    ports:
+      - "8002:8000"
+      - "50052:50051"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  app3:
+    build: .
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://rateguard:rateguard@postgres:5432/rateguard
+    ports:
+      - "8003:8000"
+      - "50053:50051"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # Standalone rejection-event consumer -- never runs inside the app
+  # containers, alerting must never sit on the /check hot path. Set
+  # ALERT_WEBHOOK_URL to a real Slack incoming-webhook URL to actually post
+  # there; unset, it logs the alert instead (see app/consumer.py).
+  alerter:
+    build: .
+    command: ["python", "-m", "app.consumer"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      ALERT_WEBHOOK_URL: ${ALERT_WEBHOOK_URL:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Three genuinely separate Redis nodes for the consistent-hashing shard
+  # router demo (app/sharding.py, app/shard_router.py) -- distinct
+  # processes, not just DB indices, so scripts/verify_sharding.py proves
+  # real cross-node distribution, not routing logic in isolation.
+  redis-shard-0:
+    image: redis:7-alpine
+    command: redis-server --save ""
+    ports:
+      - "6390:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  redis-shard-1:
+    image: redis:7-alpine
+    command: redis-server --save ""
+    ports:
+      - "6391:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  redis-shard-2:
+    image: redis:7-alpine
+    command: redis-server --save ""
+    ports:
+      - "6392:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  # Sharding is opt-in (REDIS_SHARD_URLS) -- this instance demonstrates it
+  # without touching app1/2/3, which stay on the single default Redis.
+  # Policies/idempotency/events still go through the shared `redis` +
+  # `postgres` services; only rate-limit counters get sharded.
+  app-sharded:
+    build: .
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://rateguard:rateguard@postgres:5432/rateguard
+      REDIS_SHARD_URLS: redis://redis-shard-0:6379/0,redis://redis-shard-1:6379/0,redis://redis-shard-2:6379/0
+    ports:
+      - "8005:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis-shard-0:
+        condition: service_healthy
+      redis-shard-1:
+        condition: service_healthy
+      redis-shard-2:
+        condition: service_healthy

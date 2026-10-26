@@ -1,0 +1,68 @@
+# Mirrors the docker-compose 3-instance proof (see scripts/verify_multi_instance.py)
+# but via native replica count instead of 3 named services -- same claim
+# (the limit holds globally because state lives in Redis/Postgres, not in
+# any one pod), the idiomatic K8s way to express it.
+#
+# Build and make the image available to your cluster before applying, e.g.:
+#   docker build -t rateguard-app:latest .
+#   kind load docker-image rateguard-app:latest   # for a local kind cluster
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rateguard-app
+  labels:
+    app: rateguard-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: rateguard-app
+  template:
+    metadata:
+      labels:
+        app: rateguard-app
+    spec:
+      containers:
+        - name: rateguard-app
+          image: rateguard-app:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          env:
+            # Only the two keys this container actually needs -- not a
+            # blanket envFrom, which would also leak POSTGRES_PASSWORD
+            # (used only by the postgres pod) into every app pod.
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rateguard-secrets
+                  key: REDIS_URL
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rateguard-secrets
+                  key: DATABASE_URL
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rateguard-app
+spec:
+  type: ClusterIP
+  selector:
+    app: rateguard-app
+  ports:
+    - port: 80
+      targetPort: 8000
